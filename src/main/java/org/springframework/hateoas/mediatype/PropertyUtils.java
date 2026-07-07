@@ -22,6 +22,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -101,13 +102,18 @@ public class PropertyUtils {
 
 		T obj = BeanUtils.instantiateClass(clazz);
 
+		// Only bind properties Jackson would actually expose; ignore the rest to prevent
+		// mass-assignment to @JsonIgnore'd / read-only fields from untrusted payloads.
+		Map<String, PropertyDescriptor> writableProperties = getPropertyDescriptors(clazz) //
+				.collect(Collectors.toMap(PropertyDescriptor::getName, Function.identity(), (left, right) -> left));
+
 		properties.forEach((key, value) -> {
-			Optional.ofNullable(BeanUtils.getPropertyDescriptor(clazz, key)) //
-					.ifPresent(property -> {
+			Optional.ofNullable(writableProperties.get(key)) //
+					.map(PropertyDescriptor::getWriteMethod) //
+					.ifPresent(writeMethod -> {
 
 						try {
 
-							Method writeMethod = property.getWriteMethod();
 							ReflectionUtils.makeAccessible(writeMethod);
 							writeMethod.invoke(obj, value);
 
